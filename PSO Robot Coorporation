@@ -1,0 +1,66 @@
+import numpy as np
+
+class Particle:
+    def __init__(self, dim, bounds):
+        self.position = np.random.uniform(bounds[:,0], bounds[:,1], dim)
+        self.velocity = np.zeros(dim)
+        self.best_pos = np.copy(self.position)
+        self.best_cost = float('inf')
+
+def fitness(path, start, goal, obstacles):
+    cost = np.linalg.norm(path[-1] - goal)
+    # Add obstacle penalty
+    for obs in obstacles:
+        distances = np.linalg.norm(path - obs['center'], axis=1)
+        penalty = np.sum(np.where(distances < obs['radius'], 1000, 0))
+        cost += penalty
+    return cost
+
+def pso_path_planning(start, goal, obstacles, n_particles=30, dim=10, bounds=None, epochs=100):
+    if bounds is None:
+        bounds = np.array([[-1, 1]] * dim)  # example bounds
+    swarm = [Particle(dim, bounds) for _ in range(n_particles)]
+    global_best_pos = None
+    global_best_cost = float('inf')
+
+    w = 0.5     # inertia weight
+    c1 = c2 = 1.5  # cognitive and social coefficients
+
+    for epoch in range(epochs):
+        for p in swarm:
+            # Decode particle position into a path (e.g., waypoints) here
+            path = [start + (goal - start) * (i / (dim + 1)) + p.position[i] for i in range(dim)]
+            path = np.vstack([start, *path, goal])
+
+            cost = fitness(path, start, goal, obstacles)
+
+            if cost < p.best_cost:
+                p.best_cost = cost
+                p.best_pos = p.position
+
+            if cost < global_best_cost:
+                global_best_cost = cost
+                global_best_pos = p.position
+
+        for p in swarm:
+            r1, r2 = np.random.rand(dim), np.random.rand(dim)
+            p.velocity = w*p.velocity \
+                         + c1*r1*(p.best_pos - p.position) \
+                         + c2*r2*(global_best_pos - p.position)
+            p.position += p.velocity
+            # Optionally clip to bounds
+            p.position = np.clip(p.position, bounds[:,0], bounds[:,1])
+
+    # Build final path
+    best_path = [start + (goal - start) * (i / (dim + 1)) + global_best_pos[i] for i in range(dim)]
+    best_path = np.vstack([start, *best_path, goal])
+    return best_path, global_best_cost
+
+# Example usage
+if __name__ == "__main__":
+    start = np.array([0.0, 0.0])
+    goal = np.array([10.0, 10.0])
+    obstacles = [{'center': np.array([5.0, 5.0]), 'radius': 2.0}]
+    path, cost = pso_path_planning(start, goal, obstacles)
+    print("Path cost:", cost)
+    print("Path points:\n", path)

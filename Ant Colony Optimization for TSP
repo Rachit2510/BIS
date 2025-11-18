@@ -1,0 +1,150 @@
+#Application: Travelling Salesman Problem
+import math
+import random
+
+# ---------------------------
+# Problem definition (TSP)
+# ---------------------------
+
+# Example coordinates for 6 cities (you can change these)
+coords = [
+    (0, 0),
+    (2, 6),
+    (5, 3),
+    (6, 7),
+    (8, 3),
+    (3, 9)
+]
+
+N_CITIES = len(coords)
+
+def euclidean(a, b):
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+# Distance matrix
+dist = [[0.0]*N_CITIES for _ in range(N_CITIES)]
+for i in range(N_CITIES):
+    for j in range(N_CITIES):
+        if i != j:
+            dist[i][j] = euclidean(coords[i], coords[j])
+        else:
+            dist[i][j] = float("inf")
+
+# ---------------------------
+# Ant Colony parameters
+# ---------------------------
+
+N_ANTS       = N_CITIES          # one ant per city
+N_ITER       = 10                # iterations (matches your table length)
+ALPHA        = 1.0               # pheromone importance
+BETA         = 5.0               # heuristic importance
+EVAPORATION  = 0.5               # pheromone evaporation rate
+Q            = 100.0             # pheromone deposit factor
+
+random.seed(0)                   # make runs deterministic
+
+# ---------------------------
+# ACO core
+# ---------------------------
+
+def construct_solution(pheromone):
+    """Build a tour for one ant."""
+    n = N_CITIES
+    start = random.randrange(n)
+    tour = [start]
+    unvisited = set(range(n))
+    unvisited.remove(start)
+
+    while unvisited:
+        i = tour[-1]
+        # compute probabilities for each candidate j
+        probs = []
+        denom = 0.0
+        for j in unvisited:
+            tau = pheromone[i][j] ** ALPHA
+            eta = (1.0 / dist[i][j]) ** BETA
+            val = tau * eta
+            probs.append((j, val))
+            denom += val
+
+        # roulette wheel selection
+        r = random.random()
+        cum = 0.0
+        chosen = None
+        for j, val in probs:
+            cum += val / denom
+            if r <= cum:
+                chosen = j
+                break
+        if chosen is None:
+            chosen = list(unvisited)[-1]
+
+        tour.append(chosen)
+        unvisited.remove(chosen)
+
+    return tour
+
+def tour_length(tour):
+    length = 0.0
+    for i in range(len(tour)):
+        j = (i + 1) % len(tour)  # return to start
+        length += dist[tour[i]][tour[j]]
+    return length
+
+def ant_colony_tsp():
+    # initial pheromone
+    pheromone = [[1.0 for _ in range(N_CITIES)] for _ in range(N_CITIES)]
+
+    best_tour = None
+    best_cost = float("inf")
+    best_costs_per_iter = []
+
+    for it in range(1, N_ITER + 1):
+        all_tours = []
+        all_costs = []
+
+        # build solutions
+        for _ in range(N_ANTS):
+            tour = construct_solution(pheromone)
+            cost = tour_length(tour)
+            all_tours.append(tour)
+            all_costs.append(cost)
+
+        # update global best
+        for tour, cost in zip(all_tours, all_costs):
+            if cost < best_cost:
+                best_cost = cost
+                best_tour = tour
+
+        best_costs_per_iter.append(best_cost)
+
+        # evaporate pheromone
+        for i in range(N_CITIES):
+            for j in range(N_CITIES):
+                pheromone[i][j] *= (1.0 - EVAPORATION)
+
+        # deposit pheromone (Ant System)
+        for tour, cost in zip(all_tours, all_costs):
+            deposit = Q / cost
+            for k in range(len(tour)):
+                i = tour[k]
+                j = tour[(k + 1) % len(tour)]
+                pheromone[i][j] += deposit
+                pheromone[j][i] += deposit
+
+    return best_tour, best_costs_per_iter
+
+# ---------------------------
+# Run ACO and print like notebook
+# ---------------------------
+
+best_tour, best_costs = ant_colony_tsp()
+
+print("Output")
+print("Iteration | Best cost so far =")
+
+for i, c in enumerate(best_costs, start=1):
+    print(f"{i:2d}         {c:.6f}")
+
+print(f"\nMin cost = {min(best_costs):.6f}")
+print("Best tour (city indices) =", best_tour)

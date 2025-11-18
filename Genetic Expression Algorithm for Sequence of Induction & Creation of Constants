@@ -1,0 +1,61 @@
+#Application:Sequence of Induction & Creation of Constants
+
+import random, math
+
+# ===== Sequence Induction Setup =====
+# Example sequence: f(n) tries to model this pattern
+sequence = [2, 3, 6, 11, 18]   # You can change this
+X = list(range(1, len(sequence) + 1))
+Y = sequence
+
+# ===== Genome Representation: list tokens like ['x', 3.14, 'x'] =====
+TOKENS = ["x"]  # variable name only
+
+def random_genome():
+    return ["x"]  # start simple like your notebook
+
+def evaluate(genome, n):
+    """Evaluate expression left-to-right: start with n and apply + constant repeatedly."""
+    val = n
+    try:
+        for t in genome[1:]:
+            if isinstance(t, (int, float)):
+                val = val + t  # only addition for simplicity
+        return val
+    except:
+        return None
+
+def fitness(genome):
+    err = 0
+    for n, y in zip(X, Y):
+        v = evaluate(genome, n)
+        if v is None or math.isinf(v):
+            return 1e-9
+        err += (y - v) ** 2
+    return 1 / (1 + err/len(X))
+
+def mutate(genome):
+    g = genome[:]
+    # Add a new constant
+    g.append(round(random.uniform(-6, 6), 6))
+    return g
+
+# ===== GEA Execution with Printing Style Matching Your Note =====
+def run_gea(iterations=6, test_x=2):
+    genome = random_genome()
+    print("Initial Expression:", genome)
+
+    for i in range(iterations):
+        genome = mutate(genome)
+        print("\nMutated expression:", genome)
+
+        val = evaluate(genome, test_x)
+        if val is None:
+            print(f"Evaluated at x = {test_x}: None")
+        else:
+            print(f"Evaluated at x = {test_x}: {round(val,6)}")
+
+    return genome
+
+# ===== Run =====
+best = run_gea()

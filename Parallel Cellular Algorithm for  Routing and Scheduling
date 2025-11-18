@@ -1,0 +1,214 @@
+#Application: Routing and Scheduling
+import random
+import math
+from copy import deepcopy
+
+# ===============================
+# Problem Definition
+# ===============================
+
+# Depot + customers (x, y)
+# index 0 = depot
+coords = [
+    (0, 0),   # depot
+    (2, 3),   # customer 1
+    (5, 4),   # customer 2
+    (6, 1),   # customer 3
+    (8, 3),   # customer 4
+    (1, 6)    # customer 5
+]
+
+n_customers = len(coords) - 1
+customers = list(range(1, n_customers + 1))
+
+# service times for each node (0 unused)
+service_time = [0, 3, 4, 2, 3, 5]
+
+# simple time windows (ready_time, due_time) for each node
+# depot not used
+ready_time = [0, 0,  0,  0,  0,  0]
+due_time   = [0, 30, 40, 35, 45, 50]
+
+# travel time = Euclidean distance (you can scale if needed)
+def distance(i, j):
+    (x1, y1) = coords[i]
+    (x2, y2) = coords[j]
+    return math.hypot(x2 - x1, y2 - y1)
+
+
+# ===============================
+# Evaluation: Routing + Scheduling
+# ===============================
+
+def evaluate_route(route, big_penalty=1000):
+    """
+    route: list of customers (permutation)
+    Returns: (cost, schedule)
+      - cost: total distance + penalties for time window violations
+      - schedule: list of dicts with arrival/start/finish times
+    """
+    time = 0.0
+    pos = 0  # start at depot
+    total_dist = 0.0
+    total_lateness = 0.0
+    schedule = []
+
+    for c in route:
+        # travel to customer
+        travel = distance(pos, c)
+        time += travel
+        total_dist += travel
+
+        arrival = time
+
+        # wait if early
+        if time < ready_time[c]:
+            wait = ready_time[c] - time
+            time += wait
+
+        start_service = time
+        time += service_time[c]
+        finish = time
+
+        # lateness if finish after due time
+        lateness = max(0.0, finish - due_time[c])
+        total_lateness += lateness
+
+        schedule.append({
+            "customer": c,
+            "arrival": round(arrival, 2),
+            "start": round(start_service, 2),
+            "finish": round(finish, 2),
+            "lateness": round(lateness, 2)
+        })
+
+        pos = c
+
+    # return to depot
+    travel_back = distance(pos, 0)
+    total_dist += travel_back
+
+    cost = total_dist + big_penalty * total_lateness
+    return cost, schedule
+
+
+# ===============================
+# Parallel Cellular Algorithm
+# ===============================
+
+# 2D grid of cells (each holds one route)
+GRID_ROWS = 4
+GRID_COLS = 4
+N_ITER = 50
+MUTATION_RATE = 0.3
+
+
+def random_route():
+    r = customers[:]
+    random.shuffle(r)
+    return r
+
+
+def neighbors_indices(r, c, rows, cols):
+    """Moore neighborhood with wrap-around (toroidal)."""
+    neigh = []
+    for dr in [-1, 0, 1]:
+        for dc in [-1, 0, 1]:
+            if dr == 0 and dc == 0:
+                continue
+            nr = (r + dr) % rows
+            nc = (c + dc) % cols
+            neigh.append((nr, nc))
+    return neigh
+
+
+def local_mutation(route):
+    """Simple mutation: swap two customers."""
+    new_route = route[:]
+    if random.random() < MUTATION_RATE:
+        i, j = random.sample(range(len(new_route)), 2)
+        new_route[i], new_route[j] = new_route[j], new_route[i]
+    return new_route
+
+
+def parallel_cellular_routing():
+    # initialize grid with random routes
+    grid = [[random_route() for _ in range(GRID_COLS)] for _ in range(GRID_ROWS)]
+    grid_costs = [[None for _ in range(GRID_COLS)] for _ in range(GRID_ROWS)]
+
+    # evaluate initial population
+    global_best_route = None
+    global_best_cost = float("inf")
+
+    for i in range(GRID_ROWS):
+        for j in range(GRID_COLS):
+            cost, _ = evaluate_route(grid[i][j])
+            grid_costs[i][j] = cost
+            if cost < global_best_cost:
+                global_best_cost = cost
+                global_best_route = deepcopy(grid[i][j])
+
+    print("Initial best cost:", round(global_best_cost, 2), "route:", global_best_route)
+
+    # main iterations
+    for it in range(1, N_ITER + 1):
+        new_grid = [[None for _ in range(GRID_COLS)] for _ in range(GRID_ROWS)]
+        new_costs = [[None for _ in range(GRID_COLS)] for _ in range(GRID_ROWS)]
+
+        # update all cells "in parallel"
+        for r in range(GRID_ROWS):
+            for c in range(GRID_COLS):
+                # select best neighbor (including itself)
+                best_local_route = grid[r][c]
+                best_local_cost = grid_costs[r][c]
+
+                for nr, nc in neighbors_indices(r, c, GRID_ROWS, GRID_COLS):
+                    if grid_costs[nr][nc] < best_local_cost:
+                        best_local_cost = grid_costs[nr][nc]
+                        best_local_route = grid[nr][nc]
+
+                # produce new route by mutating the best neighbor
+
+                child_route = local_mutation(best_local_route)
+                child_cost, _ = evaluate_route(child_route)
+
+                # choose better between parent and child for this cell
+                if child_cost < best_local_cost:
+                    new_grid[r][c] = child_route
+                    new_costs[r][c] = child_cost
+                else:
+                    new_grid[r][c] = best_local_route[:]
+                    new_costs[r][c] = best_local_cost
+
+                # update global best
+                if new_costs[r][c] < global_best_cost:
+                    global_best_cost = new_costs[r][c]
+                    global_best_route = deepcopy(new_grid[r][c])
+
+        grid, grid_costs = new_grid, new_costs
+
+        if it % 5 == 0 or it == 1:
+            print(f"Iteration {it:2d} | Global best cost = {round(global_best_cost, 2)}")
+
+    # final evaluation for schedule
+    best_cost, best_schedule = evaluate_route(global_best_route)
+    return global_best_route, best_cost, best_schedule
+
+
+# ===============================
+# Run Example
+# ===============================
+
+if __name__ == "__main__":
+    random.seed(0)
+
+    best_route, best_cost, schedule = parallel_cellular_routing()
+
+    print("\n=== FINAL BEST SOLUTION ===")
+    print("Best route (customer order):", best_route)
+    print("Best cost:", round(best_cost, 2))
+    print("\nSchedule (Routing + Timing):")
+    print("Cust | Arrival | Start | Finish | Lateness")
+    for s in schedule:
+        print(f"{s['customer']:4d} | {s['arrival']:7.2f} | {s['start']:5.2f} | "
+              f"{s['finish']:6.2f} | {s['lateness'
